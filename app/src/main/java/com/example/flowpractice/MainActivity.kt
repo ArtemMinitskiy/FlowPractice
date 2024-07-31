@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.*
 //https://medium.com/@myofficework000/kotlin-flows-for-beginners-69cacb712324
 //https://medium.com/mobile-app-development-publication/kotlins-flow-channelflow-and-callbackflow-made-easy-5e82ce2e27c0
 //https://metanit.com/kotlin/tutorial/9.1.php
+//https://medium.com/@mortitech/sharedflow-vs-stateflow-a-comprehensive-guide-to-kotlin-flows-503576b4de31
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var flow: Flow<Int>
@@ -29,6 +30,10 @@ class MainActivity : AppCompatActivity() {
 //            my123Flow.collect { Log.i("mLog", "Emitting : $it") }
 //            myAbcFlow.collect { Log.i("mLog", "Emitting : $it") }
 //            myAbcFlow.channelMerge(my123Flow).collect()
+
+//            sharedFlow()
+//            stateFlow()
+//            errorHandling()
         }
 
         binding.apply {
@@ -103,6 +108,98 @@ class MainActivity : AppCompatActivity() {
         }
 
 
+    }
+
+
+    //Handle errors properly:
+    //
+    //When using flows, ensure that you handle exceptions correctly.
+    //Use the catch operator to handle exceptions within the flow pipeline,
+    //and the onCompletion operator to perform cleanup operations or react to the completion of the flow.
+    private suspend fun errorHandling() {
+        val flow = flow {
+            emit(1)
+            throw RuntimeException("Error occurred")
+            emit(2)
+        }.catch { e ->
+            // Handle the exception and emit a default value
+            Log.e("mLog", "Exception: $e")
+            emit(-1)
+        }.onCompletion {
+            Log.i("mLog", "onCompletion")
+        }
+        CoroutineScope(Dispatchers.Main).launch {
+            launch {
+                flow.collect { value ->
+                    Log.i("mLog", "Received: $value")
+                }
+            }
+        }
+    }
+
+    //StateFlow:
+    //
+    //A StateFlow is a hot flow that represents a state, holding a single value at a time. It is also a conflated flow, meaning that when a new value is emitted, the most recent value is retained and immediately emitted to new collectors.
+    //It is useful when you need to maintain a single source of truth for a state and automatically update all the collectors with the latest state.
+    //It always has an initial value and only stores the latest emitted value.
+    private suspend fun stateFlow() {
+        val mutableStateFlow = MutableStateFlow(0)
+        val stateFlow: StateFlow<Int> = mutableStateFlow
+        CoroutineScope(Dispatchers.Main).launch {
+            // Collect values from stateFlow
+            launch {
+                stateFlow.collect { value ->
+                    Log.i("mLog", "Collector 1 received: $value")
+                }
+            }
+
+            // Collect values from stateFlow
+            launch {
+                stateFlow.collect { value ->
+                    Log.i("mLog", "Collector 2 received: $value")
+                }
+            }
+
+            // Update the state
+            launch {
+                repeat(3) { i ->
+                    Log.i("mLog", "i: $i")
+//                    delay(1000)
+                    mutableStateFlow.value = i
+                }
+            }
+        }
+    }
+
+    //SharedFlow:
+    //
+    //A SharedFlow is a hot flow that can have multiple collectors. It can emit values independently of the collectors, and multiple collectors can collect the same values from the flow.
+    //It’s useful when you need to broadcast a value to multiple collectors or when you want to have multiple subscribers to the same stream of data.
+    //It does not have an initial value, and you can configure its replay cache to store a certain number of previously emitted values for new collectors.
+    private suspend fun sharedFlow() {
+        val sharedFlow = MutableSharedFlow<Int>()
+        CoroutineScope(Dispatchers.Main).launch {
+            // Collect values from sharedFlow
+            launch {
+                sharedFlow.collect { value ->
+                    Log.i("mLog", "Collector 1 received: $value")
+                }
+            }
+
+            // Collect values from sharedFlow
+            launch {
+                sharedFlow.collect { value ->
+                    Log.i("mLog", "Collector 2 received: $value")
+                }
+            }
+
+            // Emit values to sharedFlow
+            launch {
+                repeat(3) { i ->
+                    sharedFlow.emit(i)
+                }
+            }
+        }
     }
 
     //zip принимает два параметра. Первый параметр - поток данных, с которым надо выполнить объединение.
