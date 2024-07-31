@@ -34,6 +34,10 @@ class MainActivity : AppCompatActivity() {
 //            sharedFlow()
 //            stateFlow()
 //            errorHandling()
+
+//            stateIn()
+//            shareIn()
+//            startFlowOn()
         }
 
         binding.apply {
@@ -110,6 +114,108 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+    //The exception refers to the flowOn function that shall be used to change the context of the flow emission.
+    //The correct way to change the context of a flow is shown in the example below, which also prints the names of the corresponding threads to show how it all works:
+    //Notice how flow { ... } works in the background thread, while collection happens in the main thread:
+    //
+    //[DefaultDispatcher-worker-1 @coroutine#2] Emitting 1
+    //[main @coroutine#1] Collected 1
+    //[DefaultDispatcher-worker-1 @coroutine#2] Emitting 2
+    //[main @coroutine#1] Collected 2
+    //[DefaultDispatcher-worker-1 @coroutine#2] Emitting 3
+    //[main @coroutine#1] Collected 3
+    //
+    //Another thing to observe here is that the flowOn operator has changed the default sequential nature of the flow.
+    //Now collection happens in one coroutine ("coroutine#1") and emission happens in another coroutine ("coroutine#2") that is running in another thread concurrently with the collecting coroutine.
+    //The flowOn operator creates another coroutine for an upstream flow when it has to change the CoroutineDispatcher in its context.
+    private fun flowOn(): Flow<Int> = flow {
+        for (i in 1..3) {
+            delay(1000)// pretend we are computing it in CPU-consuming way
+            Log.i("mLog", "Emitting $i")
+            emit(i) // emit next value
+        }
+    }.flowOn(Dispatchers.Default) // RIGHT way to change context for CPU-consuming code in flow builder
+
+    fun startFlowOn() = runBlocking<Unit> {
+        flowOn().collect { value ->
+            Log.i("mLog", "Collected $value")
+        }
+    }
+
+    //In this example, we use the flow builder to create a new Flow that emits a random number every second.
+    //We then use shareIn to create a shared SharedFlow object called sharedFlow that shares the same Flow. We specify that the sharing should start while there are subscribers to the flow, and we use viewModelScope as the coroutine scope.
+    //
+    //The SharedFlow object returned by shareIn can also be collected by multiple collectors, and each collector will receive the same updates from the upstream source.
+    //When the Flow emits a new value, all the collectors of sharedFlow will receive the updated value immediately.
+    //Now that we have a shared Flow, we can create multiple collectors that will receive the same emissions.
+    private suspend fun shareIn() {
+        CoroutineScope(Dispatchers.Main).launch {
+            val sharedFlow = flow {
+                while (true) {
+                    delay(1000)
+                    emit((0..100).random())
+                }
+            }.shareIn(
+                scope = this,
+                started = SharingStarted.WhileSubscribed()
+            )
+
+            launch {
+                sharedFlow.collect {
+                    Log.i("mLog", "First collector: $it")
+                }
+            }
+
+            launch {
+                sharedFlow.collect {
+                    Log.e("mLog", "Second collector: $it")
+                }
+            }
+        }
+
+    }
+
+    private val randomNumbers = MutableStateFlow(0)
+    private fun generateRandomNumbers() {
+        CoroutineScope(Dispatchers.IO).launch {
+            while (true) {
+                delay(1000)
+                randomNumbers.value = (0..100).random()
+            }
+        }
+    }
+
+    //In this example, we create a new MutableStateFlow called randomNumbers with an initial value of 0.
+    //We then use stateIn to create a shared StateFlow object called sharedFlow that share the same randomNumbers Flow.
+    //We specify that the sharing should start while there are subscribers to the flow, and we use viewModelScope as the coroutine scope.
+    //
+    //The StateFlow object returned by stateIn can be collected by multiple collectors, and each collector will receive the same updates from the upstream source.
+    //When the value of randomNumbers changes, all the collectors of sharedFlow will receive the updated value immediately.
+    //
+    //Now that we have a shared StateFlow, we can create multiple collectors that will receive the same emissions.
+    //We can also update the value of the counter variable, and all the collectors will receive the updated value.
+    private suspend fun stateIn() {
+        CoroutineScope(Dispatchers.Main).launch {
+            val sharedFlow = randomNumbers.stateIn(
+                scope = this,
+                started = SharingStarted.WhileSubscribed(),
+                initialValue = 0
+            )
+            launch {
+                sharedFlow.collect {
+                    Log.i("mLog", "First collector: $it")
+                }
+            }
+
+            launch {
+                sharedFlow.collect {
+                    Log.e("mLog", "Second collector: $it")
+                }
+            }
+        }
+
+        generateRandomNumbers()
+    }
 
     //Handle errors properly:
     //
